@@ -1,0 +1,50 @@
+# Deployment for deploying Swap
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: laravel
+  labels:
+    app: laravel
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: laravel
+  template:
+    metadata:
+      labels:
+        app: laravel
+    spec:
+      containers:
+      - name: laravel
+        image: pedros43/laravel_grupo_30:latest6
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8000
+        env:
+        - name: DB_CONNECTION
+          value: "mysql"
+        - name: DB_HOST
+          value: "mysql-service"
+        - name: DB_PORT
+          value: "3306"
+        - name: DB_DATABASE
+          value: "laravel"
+        - name: DB_USERNAME
+          value: "myuser"
+        - name: DB_PASSWORD
+          value: "password"
+        - name: seed_database
+          value: "True"  # Using Jinja2 variable substitution
+        # Redis Configuration
+        - name: SESSION_DRIVER
+          value: "redis"
+        - name: REDIS_HOST
+          value: "redis-service"  # Replace with your Redis service name
+        - name: REDIS_PORT
+          value: "6379"  # Adjust based on your Redis port configuration
+        # Add any other necessary Redis connection settings
+        resources:
+          requests:
+            cpu: 400m
+            memory: "0.2Gi"  # Adjust the memory value as needed

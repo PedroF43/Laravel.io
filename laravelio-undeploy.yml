@@ -1,0 +1,35 @@
+- name: Delete Kubernetes Resources
+  hosts: localhost
+  gather_facts: no
+
+  tasks:
+    - name: Delete Laravel Deployment
+      command: kubectl delete deployment.apps/laravel
+      ignore_errors: yes
+
+    - name: Delete Laravel Service
+      command: kubectl delete service/laravel
+      ignore_errors: yes
+
+    - name: Delete Redis Deployment
+      command: kubectl delete deployment.apps/redis-deployment
+      ignore_errors: yes
+
+    - name: Delete Redis Service
+      command: kubectl delete service/redis-service
+      ignore_errors: yes
+
+    - name: Delete MySQL Deployment
+      command: kubectl delete deployment.apps/mysql-deployment
+      when: delete_data|default(true) | bool
+      ignore_errors: yes
+
+    - name: Delete MySQL Service
+      command: kubectl delete service/mysql-service
+      when: delete_data|default(true) | bool
+      ignore_errors: yes
+
+    - name: Delete PVC
+      command: kubectl delete persistentvolumeclaim mysql-pv-claim
+      when: delete_data|default(true) | bool
+      ignore_errors: yes

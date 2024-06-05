@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-deployment
+spec:
+  replicas: 1  # Set the number of Redis replicas as needed
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+      - name: redis
+        image: redis:latest  # Use the Redis image
+        resources:
+          requests:
+            cpu: 100m
+            memory: "0.3Gi"  # Adjust the memory value as needed
+        ports:
+        - containerPort: 6379  # Redis default port

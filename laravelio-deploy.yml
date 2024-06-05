@@ -1,0 +1,108 @@
+- name: Deploy Laravel using Kubernetes Engine and update inventory
+  hosts: localhost
+  gather_facts: no
+
+  tasks:
+    - name: Check if MySQL service exists
+      command: kubectl get service/mysql-service
+      ignore_errors: yes
+      register: mysql_service_check
+
+    - name: Apply MySQL PVC, Deployment, and Service if MySQL service is not running
+      block:
+        - name: Apply MySQL PVC
+          command: kubectl apply -f mysql/mysql-pvc.yml
+          when: mysql_service_check.rc != 0  # Condition to apply PVC if MySQL service doesn't exist
+
+        - name: Apply MySQL Deployment
+          command: kubectl apply -f mysql/mysql-deployment.yml
+          when: mysql_service_check.rc != 0  # Condition to apply Deployment if MySQL service doesn't exist
+
+        - name: Pause for MySQL initialization 
+          pause:
+            seconds: 60
+          when: mysql_service_check.rc != 0  # Pause if MySQL service doesn't exist
+
+        - name: Apply MySQL Service
+          command: kubectl apply -f mysql/mysql-service.yml 
+          when: mysql_service_check.rc != 0  # Condition to apply Service if MySQL service doesn't exist
+
+    - name: Read existing Service YAML
+      ansible.builtin.slurp:
+        path: /home/vagrant/codebase/laravel/laravel-service.yml
+      register: service_yaml
+
+    - name: Convert YAML to JSON
+      set_fact:
+        service_json: "{{ service_yaml.content | b64decode | from_yaml }}"
+
+    - name: Increment nodePort by 1
+      set_fact:
+        new_nodeport: "{{ service_json.spec.ports[0].nodePort + 1 }}"
+
+    - name: Update nodePort in Servn1-standard-2ice YAML
+      ansible.builtin.lineinfile:
+        path: /home/vagrant/codebase/laravel/laravel-service.yml
+        regexp: 'nodePort:.*'
+        line: '      nodePort: {{ new_nodeport }}'
+
+    - name: Set seed_database to true since MySQL service was not running
+      set_fact:
+        seed_database: true
+      when: mysql_service_check.rc != 0
+
+    - name: Set seed_database to false since MySQL service was running
+      set_fact:
+        seed_database: false
+      when: mysql_service_check.rc == 0
+
+    - name: Modify Laravel Deployment YAML
+      ansible.builtin.template:
+        src: laravel/laravel-template.yaml.j2  # Path to  Jinja2 template
+        dest: laravel/laravel-deployment.yml   # Destination path for the rendered YAML
+      vars:
+        seed_database: "{{ seed_database }}" # Define the value here or dynamically
+
+    - name: Apply Modified Laravel Deployment
+      command: kubectl apply -f laravel/laravel-deployment.yml
+
+    - name: Apply Laravel Service
+      command: kubectl apply -f laravel/laravel-service.yml
+      
+    - name: Apply Redis Deployment
+      command: kubectl apply -f redis/redis-deployment.yml
+
+    - name: Apply Redis Service
+      command: kubectl apply -f redis/redis-service.yml
+    
+    - name: Apply Laravel autoscaler 
+      command: kubectl autoscale deployment laravel --cpu-percent=75 --min=2 --max=20
+
+    - name: Wait for external IP
+      command: kubectl get svc -o=jsonpath='{.items[?(@.metadata.labels.app=="laravel")].status.loadBalancer.ingress[0].ip}'
+      register: laravel_external_ip
+      retries: 40
+      delay: 5
+      until: laravel_external_ip.stdout != "" or laravel_external_ip is failed
+      changed_when: false
+
+    - name: Create inventory file with updated app_ip
+      ansible.builtin.copy:
+        content: |
+          all:
+            vars:
+              # GKE cluster variables
+              gcp_project: ascn-grupo30
+              gcp_auth_kind: serviceaccount
+              gcp_cred_file: inventory/ascn-grupo30-final.json
+              gcp_zone: us-central1-a
+              gcp_image_type: ubuntu_containerd
+              gcp_machine_type: e2-highcpu-4
+              gcp_disk_size_gb: 20              # Can be changed if necessary
+              gcp_initial_node_count: 2 
+              
+              # APP variables
+              app_ip: "{{ laravel_external_ip.stdout }}"
+              app_port: 8000
+
+        dest: inventory/gcp.yml
